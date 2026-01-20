@@ -70,6 +70,7 @@ model = AutoModelForCausalLM.from_pretrained(
 
 tokenizer = AutoTokenizer.from_pretrained(
     pretrained_model_name_or_path=pretrained_model_path,
+    use_fast=False
     )
 
 
