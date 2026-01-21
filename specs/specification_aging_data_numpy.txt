@@ -1,0 +1,95 @@
+"""
+Identify a mathematical structure that is consistent across all 60 lines of data, 
+while allowing the numerical parameters to vary for each individual instance.
+"""
+
+import numpy as np
+from scipy.optimize import minimize
+
+# Maximum number of parameters LLM can use
+MAX_NPARAMS = 5 
+
+@evaluate.run
+def evaluate(data: dict) -> float:
+    """ 
+    Evaluation Logic:
+    1. Group the 240 rows into 60 groups (4 rows per group).
+    2. For each group, optimize one set of parameters to fit all 4 data points.
+    3. Return the negative average MSE cross all 60 groups.
+    """
+    inputs, outputs = data['inputs'], data['outputs']
+    num_rows = len(inputs)
+    group_size = 4
+    num_groups = num_rows // group_size
+    
+    total_loss = 0
+    valid_groups = 0
+
+    # Iterate through each group of 4 rows
+    for g in range(num_groups):
+        start_idx = g * group_size
+        end_idx = (g + 1) * group_size
+        
+        x_group = inputs[start_idx:end_idx]
+        y_true_group = outputs[start_idx:end_idx]
+
+        # Loss function for the current group of 4 rows
+        def group_loss(params):
+            try:
+                # Calculate predictions for all 4 rows using the same params
+                y_pred = np.array([equation(x_group[j], params) for j in range(group_size)])
+                return np.mean((y_pred - y_true_group)**2)
+            except Exception:
+                return 1e10
+
+        initial_guess = [1.0] * MAX_NPARAMS
+        
+        # Use BFGS for faster and more precise gradient-based optimization
+        res = minimize(group_loss, initial_guess, method='BFGS', tol=1e-3)
+        
+        if np.isfinite(res.fun):
+            total_loss += res.fun
+            valid_groups += 1
+    
+    if valid_groups == 0:
+        return None
+        
+    avg_loss = total_loss / valid_groups
+    
+    if np.isnan(avg_loss) or np.isinf(avg_loss):
+        return None
+    else:
+        return -float(avg_loss)
+
+
+@equation.evolve
+def equation(t: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """
+    Mathematical function for aging analysis with potential "shedding" effects.
+    
+    PHYSICAL CONTEXT:
+    1. The aging process initially follows a saturation trend (rate decreases over time), 
+       often modeled as `params[0] * (1 - np.exp(- params[1] * t))`.
+    2. However, if "shedding" or "spallation" (脱落) occurs, the protective layer 
+       is damaged, and the aging rate may SPEED UP again or show complex non-monotonic behavior.
+    
+    EVOLUTION GOAL:
+    Find a formula that captures both the initial saturation and the potential 
+    re-acceleration or complex feedback caused by shedding. 
+    You are NOT restricted to the initial formula; feel free to modify both terms 
+    or combine them in ways that reflect this "initially slow, then potentially faster" transition.
+    
+    STRICT RULES:
+    1. Generated functions MUST be smooth and differentiable (especially at t=0).
+    2. Avoid using `abs()`, `sqrt(t)` (use `sqrt(t+eps)`), or piecewise `if/else` logic.
+    3. Use parameters `params[0]` to `params[6]` (up to 7 parameters).
+    
+    Args:
+        t: Time value.
+        params: Numerical parameters to optimize.
+    """
+    # Basic starting structure:
+    # Term 1 (Saturation) + Term 2 (Correction/Shedding)
+    primary = params[0] * (1 - np.exp(- params[1] * t))
+    secondary = - params[2] * t
+    return primary + secondary
