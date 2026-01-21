@@ -265,7 +265,6 @@ class LocalLLM(LLM):
                 'temperature': None,
                 'top_k': None,
                 'top_p': None,
-                'add_special_tokens': False,
                 'skip_special_tokens': True,
             }
         }

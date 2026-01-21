@@ -40,7 +40,8 @@
 # stress-strain
 # python main.py --problem_name stressstrain --spec_path ./specs/specification_stressstrain_numpy.txt --log_path ./logs/stresstrain_local
 
-
+# aging data
+python main.py --problem_name aging_data --spec_path ./specs/specification_aging_data_numpy.txt --log_path ./logs/aging_data_local2
 
 
 

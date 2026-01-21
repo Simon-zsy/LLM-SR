@@ -88,15 +88,16 @@ def completions():
     # parameters
     if 'params' in content:
         params: dict = content.get('params')
-        max_new_tokens = params.get('max_new_tokens', args.max_new_tokens)
-        temperature = params.get('temperature', args.temperature)
+        max_new_tokens = params.get('max_new_tokens') or args.max_new_tokens
+        temperature = params.get('temperature') or args.temperature
         do_sample = params.get('do_sample', args.do_sample)
-        top_k = params.get('top_k', args.top_k)
-        top_p = params.get('top_p', args.top_p)
-        num_return_sequences = params.get('num_return_sequences', args.num_return_sequences)
-        eos_token_id = params.get('eos_token_id', args.eos_token_id)
-        pad_token_id = params.get('pad_token_id', args.pad_token_id)
-        max_repeat_prompt = params.get('max_repeat_prompt', args.max_repeat_prompt)
+        top_k = params.get('top_k') or args.top_k
+        top_p = params.get('top_p') or args.top_p
+        num_return_sequences = params.get('num_return_sequences') or args.num_return_sequences
+        eos_token_id = params.get('eos_token_id') or args.eos_token_id
+        pad_token_id = params.get('pad_token_id') or args.pad_token_id
+        max_repeat_prompt = params.get('max_repeat_prompt') or args.max_repeat_prompt
+        # add_special_tokens and skip_special_tokens are handled by hardcoding or ignored
 
 
     # response generation
