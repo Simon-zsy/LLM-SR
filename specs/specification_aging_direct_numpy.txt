@@ -1,0 +1,83 @@
+"""
+Identify a mathematical structure that fits the aging data directly,
+while allowing the numerical parameters to vary for each individual instance.
+"""
+
+import numpy as np
+from scipy.optimize import minimize
+
+# Maximum number of parameters to fit per group
+MAX_NPARAMS = 5
+
+@evaluate.run
+def evaluate(data: dict) -> float:
+    """ 
+    Direct Function Evaluation:
+    1. For each group of 4 points, we find the best 'params' that 
+       minimize the MSE between y_true and equation(t, params).
+    2. Returns the negative average MSE across all groups.
+    """
+    inputs, outputs = data['inputs'], data['outputs']
+    num_rows = len(inputs)
+    group_size = 4
+    num_groups = num_rows // group_size
+    
+    total_loss = 0
+    
+    for g in range(num_groups):
+        start_idx = g * group_size
+        end_idx = (g + 1) * group_size
+        
+        t_obs = inputs[start_idx:end_idx].flatten()
+        y_true = outputs[start_idx:end_idx].flatten()
+
+        def group_loss(params):
+            y_pred = equation(t_obs, params)
+            
+            if y_pred is None:
+                return 1e10
+            
+            # Penalize non-finite results
+            if not np.all(np.isfinite(y_pred)):
+                return 1e10
+                
+            return np.mean((y_pred - y_true)**2)
+
+        initial_guess = [0.1] * MAX_NPARAMS
+        res = minimize(group_loss, initial_guess, method='Nelder-Mead', tol=1e-3)
+        
+        loss_val = res.fun if np.isfinite(res.fun) else 1e10
+        total_loss += loss_val
+    
+    avg_loss = total_loss / num_groups
+    return -float(avg_loss)
+
+
+@equation.evolve
+def equation(t: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """
+    Direct function for aging: y = f(t, params).
+    
+    PHYSICAL MEANING:
+    - Should handle initial state y(0) = 0.
+    - Should account for saturation and potential "shedding" effects (non-monotonic growth).
+    
+    NUMERICAL RULES:
+    1. Ensure the output is a numpy array of the same shape as t.
+    2. Use stable functions like np.exp, np.tanh.
+    3. Use params[0], params[1], etc.
+    
+    NOTE:
+    1. You may add one more term or change the product relationship into addition relationship
+    2. Try to think of expressions that are influenced by the value of y itself since we are representing materials aging
+    """
+    #Example: 
+    y0 = params[0]  # Initial state
+    a = params[1]  # Saturation level
+    b = params[2]  # Shedding rate
+    c = params[3]     # Saturation time scale
+    d = params[4]  # Shedding time scale
+
+    # Aging function
+    y = y0 * (1 - np.exp(-t / c)) * np.tanh(a - b * np.exp(-t / d))
+    return y

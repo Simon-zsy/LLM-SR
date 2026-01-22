@@ -1,0 +1,128 @@
+"""
+Identify a mathematical structure that is consistent across all 60 lines of data, 
+while allowing the numerical parameters to vary for each individual instance.
+"""
+
+import numpy as np
+from scipy.optimize import minimize
+
+# Maximum number of parameters to fit per group (a, b, etc.)
+MAX_NPARAMS = 5
+
+@evaluate.run
+def evaluate(data: dict) -> float:
+    """ 
+    Fixed-Step ODE Evaluation (Manual Euler Integration):
+    1. For each group of 4 points, we find the best 'params' by 
+       integrating dy/dt = equation(y, t, params) from t=0 to 500.
+    2. Uses a fixed step size (h=0.1) to avoid LSODA adaptive step issues.
+    3. Returns the negative average MSE cross all groups.
+    4. Handles numerical stability by clipping and penalizing NaNs.
+    """
+    inputs, outputs = data['inputs'], data['outputs']
+    num_rows = len(inputs)
+    group_size = 4
+    num_groups = num_rows // group_size
+    
+    # Step size for manual integration (balanced for speed in Python)
+    # Using h=2.0 to ensure it fits within evaluation timeout
+    h = 2.0 
+    max_t = 500.0
+    num_steps = int(max_t / h) + 1
+    
+    total_loss = 0
+    
+    for g in range(num_groups):
+        start_idx = g * group_size
+        end_idx = (g + 1) * group_size
+        
+        t_obs = inputs[start_idx:end_idx].flatten()
+        y_true = outputs[start_idx:end_idx].flatten()
+        
+        # Sort targets for efficient recording during integration
+        obs_indices = np.argsort(t_obs)
+        sorted_t = t_obs[obs_indices]
+        sorted_y_true = y_true[obs_indices]
+
+        def group_loss(ab_params):
+            # 2. Regularization: Penalty for large parameters to prevent explosion
+            reg_lambda = 0.01
+            reg_penalty = reg_lambda * np.sum(np.abs(ab_params))
+
+            curr_y = 0.0
+            curr_t = 0.0
+            y_preds = []
+            target_ptr = 0
+            
+            # Simple Euler Integration Loop
+            for step in range(num_steps):
+                # When we reach or pass an observation time, record the current y
+                while target_ptr < len(sorted_t) and curr_t >= sorted_t[target_ptr] - (h/2.0):
+                    y_preds.append(curr_y)
+                    target_ptr += 1
+                
+                # Termination check
+                if target_ptr >= len(sorted_t):
+                    break
+                    
+                # Calculate slope and update
+                slope = equation(curr_y, curr_t, ab_params)
+                
+                # Check for None return (if LLM generated an empty body)
+                if slope is None:
+                    return 1e10
+                    
+                curr_y += slope * h
+                curr_t += h
+                
+                # Numerical penalty for explosion or NaN
+                if not np.isfinite(curr_y) or abs(curr_y) > 1e6:
+                    return 1e10
+            
+            # Ensure we have predictions for all target points
+            while len(y_preds) < len(sorted_t):
+                y_preds.append(curr_y)
+            
+            # Reorder y_preds back to original obs order
+            final_y_preds = np.zeros_like(y_true)
+            final_y_preds[obs_indices] = y_preds
+            
+            mse = np.mean((final_y_preds - y_true)**2)
+            return mse + reg_penalty
+
+        initial_guess = [0.1] * MAX_NPARAMS
+        # Using Nelder-Mead with a limit on iterations to keep things moving
+        res = minimize(group_loss, initial_guess, method='Nelder-Mead', tol=1e-2, options={'maxiter': 100})
+        
+        loss_val = res.fun if np.isfinite(res.fun) else 1e10
+        total_loss += loss_val
+    
+    avg_loss = total_loss / num_groups
+    return -float(avg_loss)
+
+
+@equation.evolve
+def equation(y: float, t: float, params: np.ndarray) -> float:
+    """
+    Differential Equation for Aging: dy/dt = a*f(y) - b*g(y).
+
+    EVALUATION METHOD: 
+    This rate is integrated using the Euler method with a fixed step (h=0.1) from t=0 to t=500.
+
+    PHYSICAL MEANING:
+    - Aging (a*f(y)): Material aging rate (e.g., params[0] * (1 - y/params[2])).
+    - Shedding (b*g(y)): Material loss/regress (e.g., params[1] * y**2).
+
+    NUMERICAL RULES:
+    1. AVOID raw `1/y` or `log(y)` (causes NaN at y=0).
+    2. PREFER stable forms like `(1 - y/K)`, `exp(-y)`, `y/(1+y)`.
+    3. Ensure result is a scalar. Use `np.clip` to prevent explosion.
+    4. You have 5 parameters available.
+    """
+    # Define and calculate the rate
+    a, b = params[0], params[1]
+    
+    # YOUR CODE HERE (Evolution starts below)
+    rate = a * (1 / (1+np.exp(y))) - b * y
+    return rate
+
